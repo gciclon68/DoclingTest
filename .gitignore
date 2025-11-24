@@ -1,0 +1,72 @@
+.DS_Store
+Thumbs.db
+
+# Python caches and build artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.dylib
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments and Python tooling
+.env
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.pytype/
+.ruff_cache/
+
+# Sensitive configuration (API keys)
+.Key_env
+
+# Coverage and testing outputs
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+nosetests.xml
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local data, cache, and exports
+data/
+datasets/
+cache/
+tmp/
+artifacts/
+exports/
+assets/
+chroma_db/
+documents/
+out/
+
+
+# Logs
+*.log
+logs/
+
+# Node / frontend tooling (for n8n, dashboards, etc.)
+node_modules/
+dist-ssr/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnp.*
+
+# Editors
+.idea/
+.vscode/
+
+# OS / misc
+*.swp
+*.swo
+.python-version
+documents/testMOS.pdf

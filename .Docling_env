@@ -1,0 +1,114 @@
+# Docling Pipeline Configurations
+# This file defines available document processing pipelines
+# Tracked in git - no sensitive information here
+
+# =============================================================================
+# PIPELINE DEFINITIONS
+# =============================================================================
+
+# Simple PDF Pipeline
+# - Fastest option, minimal processing
+# - No ML models required (no downloads)
+# - Basic text extraction only
+# - No OCR, no table detection, no figure analysis
+# - Best for: Born-digital PDFs with embedded text
+SIMPLE_PDF=Fast PDF processing, no ML models, no OCR, basic text extraction
+
+# Standard PDF Pipeline
+# - Full-featured document understanding
+# - Downloads ML models (~500MB first run)
+# - Layout analysis, table detection, figure extraction
+# - No OCR (requires clean, born-digital PDFs)
+# - Best for: High-quality PDFs with complex layouts
+STANDARD_PDF=Full-featured with layout analysis and table detection (downloads ML models)
+
+# RapidOCR Pipeline
+# - OCR-enabled with RapidOCR engine (local, no API)
+# - Fast and lightweight OCR
+# - Good for scanned documents and images
+# - Table and figure detection included
+# - Best for: Scanned documents, images embedded in PDFs
+RAPIDOCR_PIPELINE=OCR-enabled with RapidOCR (fast, local, good for scanned docs)
+
+# EasyOCR Pipeline
+# - OCR with EasyOCR engine (local, no API)
+# - Supports 80+ languages
+# - Slower but better accuracy than RapidOCR
+# - Downloads language models as needed
+# - Best for: Multi-language documents, high accuracy needs
+EASYOCR_PIPELINE=OCR with EasyOCR (slower but better accuracy, 80+ languages)
+
+# Tesseract Pipeline
+# - OCR with Tesseract engine
+# - Traditional OCR, widely used
+# - Requires Tesseract system installation
+# - May not be available without sudo access
+# - Best for: When Tesseract is already installed
+TESSERACT_PIPELINE=OCR with Tesseract (traditional, requires system install - may not work)
+
+# Vision LLM Pipeline
+# - Advanced image understanding with AI
+# - Generates detailed descriptions for figures/images
+# - Requires API key (OpenAI GPT-4V or Anthropic Claude)
+# - Adds cost per image (~$0.01-0.03 per image)
+# - Best for: Documents with important diagrams, charts, photos
+VISION_LLM_PIPELINE=Advanced OCR + AI image descriptions (requires API key, costs apply)
+
+# Formula-Aware Pipeline
+# - Specialized for mathematical/scientific documents
+# - Preserves LaTeX formulas and equations
+# - Handles Greek letters and mathematical symbols
+# - Enhanced table detection for data tables
+# - Best for: Academic papers, technical documents, equations
+FORMULA_AWARE_PIPELINE=Specialized for math documents, preserves LaTeX formulas and symbols
+
+# =============================================================================
+# OCR ENGINE OPTIONS
+# =============================================================================
+
+# RapidOCR - Fast, local, good balance
+OCR_RAPIDOCR=Fast local OCR, good for most documents
+
+# EasyOCR - Accurate, multi-language, slower
+OCR_EASYOCR=High accuracy OCR, supports 80+ languages
+
+# Tesseract - Traditional, requires install
+OCR_TESSERACT=Traditional OCR engine (requires system install)
+
+# None - Disable OCR
+OCR_NONE=No OCR, text extraction only
+
+# =============================================================================
+# OUTPUT FORMAT OPTIONS
+# =============================================================================
+
+# JSON - Full DoclingDocument serialization
+OUTPUT_JSON=Complete DoclingDocument in JSON format
+
+# Markdown - Human-readable preview
+OUTPUT_MARKDOWN=Markdown preview with text, tables, images
+
+# YAML - Alternative structured format
+OUTPUT_YAML=YAML format for configuration-style output
+
+# All - Generate all formats
+OUTPUT_ALL=Generate JSON, Markdown, and YAML outputs
+
+# =============================================================================
+# FEATURE FLAGS
+# =============================================================================
+
+# Enable image captioning with vision models
+ENABLE_IMAGE_CAPTIONS=true
+
+# Extract and save figure images to assets/
+EXTRACT_FIGURES=true
+
+# Preserve LaTeX formulas in output
+PRESERVE_LATEX=true
+
+# Generate table of contents
+GENERATE_TOC=true
+
+# Verbose debug output
+DEBUG_MODE=false
