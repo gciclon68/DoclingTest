@@ -79,17 +79,34 @@ After processing, outputs are saved to `out/`:
 ```
 out/
 ├── document_name_docling.json      # Full DoclingDocument (structured data)
-└── document_name_preview.md        # Markdown preview (human-readable)
+├── document_name_preview.md        # Markdown preview (human-readable)
+└── document_name_captions.json     # AI image descriptions (Vision LLM only)
 ```
 
-Extracted figures go to `assets/`:
+Extracted figures and tables go to `assets/` at 2x resolution (144 DPI):
 
 ```
 assets/
-├── document_name_fig1.png
+├── document_name_fig1.png          # Extracted figures
 ├── document_name_fig2.png
+├── document_name_table1.png        # Extracted tables (as images)
 └── ...
 ```
+
+**Note:** All pipelines now automatically extract figures and tables. Set `EXTRACT_FIGURES=false` in `.Docling_env` to disable.
+
+## AI Image Descriptions (Vision LLM)
+
+When using the **Vision LLM pipeline**, AI-generated descriptions are automatically created for each extracted figure:
+
+- Descriptions appear in the markdown preview under an "AI Image Descriptions" section
+- Each figure includes a clickable link to the image file
+- Descriptions are also saved to `{filename}_captions.json` for programmatic access
+- Uses OpenAI GPT-4o or Anthropic Claude 3.5 Sonnet (configurable in `.Docling_env`)
+
+**Requirements:**
+- Valid API key in `.Key_env` (OpenAI or Anthropic)
+- Vision LLM pipeline only appears in menu when valid API key is detected
 
 ## Mathematical Formulas
 
