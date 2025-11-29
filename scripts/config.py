@@ -143,9 +143,27 @@ class Config:
             return bool(self.anthropic_api_key and self.anthropic_api_key != "your_anthropic_api_key_here")
         return False
 
-    def get_available_documents(self) -> list[Path]:
-        """Get list of documents in the documents directory."""
-        if not self.documents_dir.exists():
+    def get_available_documents(self, folder_path: Optional[Path] = None) -> list[Path]:
+        """Get list of documents in the specified folder or documents directory.
+
+        Args:
+            folder_path: Optional Path to a subfolder within documents/.
+                        If None, searches the root documents/ directory.
+
+        Returns:
+            Sorted list of document Paths in the specified folder (non-recursive).
+        """
+        # Default to documents root if no folder specified
+        search_dir = folder_path if folder_path else self.documents_dir
+
+        if not search_dir.exists():
+            return []
+
+        # Validate that search_dir is within documents directory (prevent path traversal)
+        try:
+            search_dir.resolve().relative_to(self.documents_dir.resolve())
+        except ValueError:
+            # Path is outside documents directory
             return []
 
         # Supported file extensions
@@ -153,9 +171,129 @@ class Config:
 
         documents = []
         for ext in extensions:
-            documents.extend(self.documents_dir.glob(f"*{ext}"))
+            # Only search immediate directory, not recursive
+            documents.extend(search_dir.glob(f"*{ext}"))
 
         return sorted(documents)
+
+    def get_subfolders(self, folder_path: Optional[Path] = None) -> list[Path]:
+        """Get list of immediate subdirectories within a given folder.
+
+        Args:
+            folder_path: Optional Path to search within. If None, searches documents/ root.
+
+        Returns:
+            Sorted list of subdirectory Paths (non-hidden folders only).
+        """
+        search_dir = folder_path if folder_path else self.documents_dir
+
+        if not search_dir.exists():
+            return []
+
+        # Validate path is within documents directory
+        try:
+            search_dir.resolve().relative_to(self.documents_dir.resolve())
+        except ValueError:
+            return []
+
+        # Get immediate subdirectories, filter out hidden folders
+        subfolders = [
+            d for d in search_dir.iterdir()
+            if d.is_dir() and not d.name.startswith('.')
+        ]
+
+        return sorted(subfolders)
+
+    def get_relative_output_dir(self, doc_path: Path) -> Path:
+        """Calculate output directory for a document, mirroring folder structure.
+
+        Args:
+            doc_path: Path to the document file.
+
+        Returns:
+            Path to the output directory for this document.
+
+        Raises:
+            ValueError: If path is too deep or invalid.
+        """
+        # Calculate relative path from documents/ to document's parent folder
+        try:
+            relative = doc_path.resolve().relative_to(self.documents_dir.resolve()).parent
+        except ValueError:
+            # Document is outside documents directory, use default
+            return self.output_dir
+
+        # Validate path depth (max 10 levels)
+        if len(relative.parts) > 10:
+            raise ValueError(f"Path too deep (max 10 levels): {relative}")
+
+        # If document is in root (relative is "."), use output_dir directly
+        if str(relative) == ".":
+            return self.output_dir
+
+        # Create mirrored folder structure
+        output_dir = self.output_dir / relative
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        return output_dir
+
+    def get_relative_assets_dir(self, doc_path: Path) -> Path:
+        """Calculate assets directory for a document, mirroring folder structure.
+
+        Args:
+            doc_path: Path to the document file.
+
+        Returns:
+            Path to the assets directory for this document.
+
+        Raises:
+            ValueError: If path is too deep or invalid.
+        """
+        # Calculate relative path from documents/ to document's parent folder
+        try:
+            relative = doc_path.resolve().relative_to(self.documents_dir.resolve()).parent
+        except ValueError:
+            # Document is outside documents directory, use default
+            return self.assets_dir
+
+        # Validate path depth (max 10 levels)
+        if len(relative.parts) > 10:
+            raise ValueError(f"Path too deep (max 10 levels): {relative}")
+
+        # If document is in root (relative is "."), use assets_dir directly
+        if str(relative) == ".":
+            return self.assets_dir
+
+        # Create mirrored folder structure
+        assets_dir = self.assets_dir / relative
+        assets_dir.mkdir(parents=True, exist_ok=True)
+
+        return assets_dir
+
+    def validate_batch_preconditions(self, docs: list[Path]) -> list[str]:
+        """Validate documents before batch processing and return warnings.
+
+        Args:
+            docs: List of document Paths to validate.
+
+        Returns:
+            List of warning/error messages (empty if all good).
+        """
+        warnings = []
+
+        for doc in docs:
+            # Check if document exists
+            if not doc.exists():
+                warnings.append(f"File not found: {doc.name}")
+                continue
+
+            # Warn about very large files (>500MB)
+            file_size = doc.stat().st_size
+            if file_size > 500 * 1024 * 1024:  # 500MB
+                size_mb = file_size / (1024 * 1024)
+                warnings.append(f"Very large file (may be slow): {doc.name} ({size_mb:.1f} MB)")
+
+        return warnings
 
     def get_pipeline_config(self, pipeline_key: str) -> Optional[PipelineConfig]:
         """Get configuration for a specific pipeline."""

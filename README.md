@@ -1,38 +1,50 @@
 # Docling Document Processor
 
-Interactive document processing tool using IBM Docling for multimodal RAG pipelines.
+Interactive document processing tool using IBM Docling for multimodal RAG pipelines, with folder navigation and batch processing.
 
 ## Quick Start
 
-### 1. Activate Environment
+1. Activate environment  
+   ```bash
+   module load python/3.11.11
+   source venv/bin/activate
+   ```
+2. Install dependencies (includes new `tabulate`)  
+   ```bash
+   pip install -r requirements.txt
+   # or: pip install tabulate
+   ```
+3. Add documents (subfolders are supported)  
+   ```bash
+   cp your_file.pdf documents/
+   cp spec.pdf documents/project_a/spec.pdf
+   ```
+   Supported formats: PDF, DOCX, PPTX, HTML, XML, Markdown
+4. Run interactive processor  
+   ```bash
+   python scripts/ingest.py
+   ```
 
-```bash
-# Load Python module
-module load python/3.11.11
+## Navigation & Selection
 
-# Activate virtual environment
-source venv/bin/activate
+- Folders use `d` prefixes: `d1`, `d2`, …; documents use numbers: `1`, `2`, `3`, …
+- `..` moves up one level; `0` exits.
+- Multi-select with commas/ranges: `1-3`, `1,3,5`, `1-3,5,8-10`, or `all`.
+- Large batches (>20 files) trigger a size/time warning before running.
+
+Example prompt:
 ```
+📂 Current: documents/project_a/
 
-### 2. Add Documents
+  d1. 📁 subfolder_1/
+  d2. 📁 subfolder_2/
+   1. 📄 spec.pdf (45.2 MB)
+   2. 📄 manual.docx (12.8 MB)
 
-Place your documents in the `documents/` folder:
-```bash
-cp your_file.pdf documents/
+  .. (go up)  |  0 (exit)
+
+Select folder (d1,d2...) or documents (1-3, 1,3, all):
 ```
-
-Supported formats: PDF, DOCX, PPTX, HTML, XML, Markdown
-
-### 3. Run Interactive Processor
-
-```bash
-python scripts/ingest.py
-```
-
-The script will guide you through:
-1. Selecting a document from `documents/`
-2. Choosing a processing pipeline
-3. Processing and viewing results
 
 ## Available Pipelines
 
@@ -74,24 +86,28 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## Output Structure
 
-After processing, outputs are saved to `out/`:
+Outputs mirror the `documents/` folder structure:
 
+```
+documents/project_a/spec.pdf      -> out/project_a/spec_docling.json
+documents/project_a/spec.pdf      -> assets/project_a/spec_fig1.png
+```
+
+Files per document:
 ```
 out/
 ├── document_name_docling.json      # Full DoclingDocument (structured data)
 ├── document_name_preview.md        # Markdown preview (human-readable)
 └── document_name_captions.json     # AI image descriptions (Vision LLM only)
-```
 
-Extracted figures and tables go to `assets/` at 2x resolution (144 DPI):
-
-```
 assets/
 ├── document_name_fig1.png          # Extracted figures
 ├── document_name_fig2.png
 ├── document_name_table1.png        # Extracted tables (as images)
 └── ...
 ```
+
+Extracted figures and tables are saved at 2x resolution (144 DPI).
 
 **Note:** All pipelines now automatically extract figures and tables. Set `EXTRACT_FIGURES=false` in `.Docling_env` to disable.
 
@@ -123,26 +139,20 @@ The equation is: $$E = mc^2$$
 Greek symbols: α + β = γ
 ```
 
+## Batch Processing
+
+- Single-document mode remains unchanged; batch mode runs when you select multiple files.
+- A single pipeline is applied to the entire batch (chosen once).
+- Pre-flight validation flags missing files and very large documents before starting.
+- Progress shows `[n/total]` with per-file timing; errors are captured per document.
+- Keyboard interrupts offer to save partial results.
+- Summaries are tabulated (`tabulate`) with columns: File | Time | Pipeline | Pages | Text | Pics | Tables | Formulas | Status.
+
 ## Troubleshooting
 
-### No documents found
-```bash
-# Make sure documents exist
-ls documents/
-
-# Add a test document
-cp /path/to/file.pdf documents/
-```
-
-### Pipeline fails
-- **First run**: ML models will download (~500MB), this is normal
-- **OCR errors**: Try a different OCR engine or Simple pipeline
-- **Memory issues**: Use Simple pipeline for large documents
-
-### Vision LLM not available
-- Check `.Key_env` has valid API key
-- Key format: `OPENAI_API_KEY=sk-...` (no quotes)
-- Restart script after adding keys
+- **No documents found**: `ls documents/` then add files to that tree.
+- **Pipeline fails**: First run downloads models (~500MB). Try a simpler pipeline for large files or OCR issues.
+- **Vision LLM not available**: Ensure `.Key_env` has a valid key (`OPENAI_API_KEY=sk-...`), then restart.
 
 ## Example Workflow
 
@@ -150,76 +160,38 @@ cp /path/to/file.pdf documents/
 # 1. Setup
 module load python/3.11.11
 source venv/bin/activate
+pip install -r requirements.txt
 
-# 2. Add document
-cp research_paper.pdf documents/
+# 2. Add documents (optionally in subfolders)
+cp research_paper.pdf documents/papers/
 
-# 3. Process
+# 3. Process (navigate + multi-select)
 python scripts/ingest.py
 
-# 4. View results
-cat out/research_paper_preview.md
+# 4. View results (mirrors input folders)
+cat out/papers/research_paper_preview.md
+ls assets/papers/
 ```
-
-## Advanced Usage
-
-### Debug Mode
-
-Enable verbose logging in `.Docling_env`:
-```bash
-DEBUG_MODE=true
-```
-
-### Custom Output Formats
-
-The JSON output (`*_docling.json`) contains the complete document structure:
-
-```json
-{
-  "pages": [...],
-  "elements": [...],
-  "tables": [...],
-  "figures": [...]
-}
-```
-
-Use this for:
-- Custom processing pipelines
-- Integration with other tools
-- Building vector databases (Phase 2)
 
 ## Next Steps
 
-After Phase 1 (document ingestion), proceed to:
-
-1. **Phase 2**: Vector database creation ([embed_index.py](scripts/embed_index.py))
-2. **Phase 3**: RAG retrieval system ([answer.py](scripts/answer.py))
-3. **Phase 4**: Advanced multimodal search
-
-See [EXECUTION_PLAN.md](EXECUTION_PLAN.md) for full roadmap.
+After ingestion:
+1. Build vector index: `scripts/embed_index.py`
+2. Run retrieval: `scripts/answer.py`
+3. Explore multimodal search: see `EXECUTION_PLAN.md`
 
 ## Project Structure
 
 ```
 DoclingTest/
-├── documents/           # Input documents
-├── out/                 # Processed outputs (JSON, markdown)
-├── assets/              # Extracted figures/images
+├── documents/           # Input documents (supports nested folders)
+├── out/                 # Processed outputs (mirrors document tree)
+├── assets/              # Extracted figures/images (mirrors document tree)
 ├── scripts/             # Processing scripts
-│   ├── ingest.py       # Main interactive processor
-│   └── config.py       # Configuration loader
+│   ├── ingest.py        # Main interactive processor
+│   └── config.py        # Configuration loader
 ├── venv/                # Python virtual environment
 ├── .Docling_env         # Pipeline configs (tracked in git)
 ├── .Key_env             # API keys (NOT in git)
 └── README.md            # This file
 ```
-
-## Support
-
-For issues with:
-- **Docling library**: https://github.com/DS4SD/docling
-- **This project**: Check [EXECUTION_PLAN.md](EXECUTION_PLAN.md) or open an issue
-
----
-
-**Happy document processing! 📄✨**

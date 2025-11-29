@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import json
 import base64
+from dataclasses import dataclass
+from collections import defaultdict
 
 # Set TESSDATA_PREFIX for Tesseract OCR if not already set
 if 'TESSDATA_PREFIX' not in os.environ:
@@ -48,11 +50,21 @@ from docling_core.types.doc import PictureItem, TableItem
 class DocumentProcessor:
     """Handles document processing with different pipelines."""
 
-    def __init__(self, pipeline_key: str):
+    def __init__(self, pipeline_key: str,
+                 output_base_dir: Optional[Path] = None,
+                 assets_base_dir: Optional[Path] = None):
         self.pipeline_key = pipeline_key
         self.pipeline_config = config.get_pipeline_config(pipeline_key)
         if not self.pipeline_config:
             raise ValueError(f"Unknown pipeline: {pipeline_key}")
+
+        # Use provided directories or fall back to defaults (backward compatible)
+        self.output_base_dir = output_base_dir or config.output_dir
+        self.assets_base_dir = assets_base_dir or config.assets_dir
+
+        # Create directories if they don't exist
+        self.output_base_dir.mkdir(parents=True, exist_ok=True)
+        self.assets_base_dir.mkdir(parents=True, exist_ok=True)
 
         self.converter: Optional[DocumentConverter] = None
         self._setup_pipeline()
@@ -221,7 +233,7 @@ class DocumentProcessor:
                 # Export picture/figure items
                 if isinstance(element, PictureItem):
                     picture_counter += 1
-                    img_filename = config.assets_dir / f"{base_name}_fig{picture_counter}.png"
+                    img_filename = self.assets_base_dir / f"{base_name}_fig{picture_counter}.png"
                     try:
                         with img_filename.open("wb") as fp:
                             element.get_image(doc).save(fp, "PNG")
@@ -241,7 +253,7 @@ class DocumentProcessor:
                 # Export table images
                 if isinstance(element, TableItem):
                     table_counter += 1
-                    img_filename = config.assets_dir / f"{base_name}_table{table_counter}.png"
+                    img_filename = self.assets_base_dir / f"{base_name}_table{table_counter}.png"
                     try:
                         with img_filename.open("wb") as fp:
                             element.get_image(doc).save(fp, "PNG")
@@ -321,7 +333,7 @@ class DocumentProcessor:
             # Save captions to file
             if captions:
                 base_name = doc_path.stem
-                captions_path = config.output_dir / f"{base_name}_captions.json"
+                captions_path = self.output_base_dir / f"{base_name}_captions.json"
                 with open(captions_path, 'w', encoding='utf-8') as f:
                     json.dump(captions, f, indent=2, ensure_ascii=False)
                 print(f"   💾 Captions saved to: {captions_path.name}")
@@ -397,7 +409,7 @@ class DocumentProcessor:
         base_name = doc_path.stem
 
         # Save JSON (DoclingDocument serialization)
-        json_path = config.output_dir / f"{base_name}_docling.json"
+        json_path = self.output_base_dir / f"{base_name}_docling.json"
         print(f"\n💾 Saving outputs...")
         print(f"   → JSON: {json_path.name}")
 
@@ -410,7 +422,7 @@ class DocumentProcessor:
             print(f"   ⚠️  Error saving JSON: {e}")
 
         # Save Markdown preview
-        md_path = config.output_dir / f"{base_name}_preview.md"
+        md_path = self.output_base_dir / f"{base_name}_preview.md"
         print(f"   → Markdown: {md_path.name}")
 
         try:
@@ -497,6 +509,391 @@ class DocumentProcessor:
                     f.write(f"*Error extracting text: {e2}*\n")
 
 
+def parse_selection(input_str: str, max_count: int) -> list[int]:
+    """Parse selection string into list of document indices.
+
+    Args:
+        input_str: User input string (e.g., "1-5,8,10" or "all")
+        max_count: Maximum valid index
+
+    Returns:
+        Sorted list of selected indices (1-based)
+
+    Raises:
+        ValueError: If input format is invalid
+    """
+    input_str = input_str.strip()
+
+    if not input_str:  # Empty input = cancel
+        return []
+
+    if input_str.lower() == "all":
+        return list(range(1, max_count + 1))
+
+    selections = set()
+    try:
+        for part in input_str.replace(' ', '').split(','):
+            if '-' in part:
+                # Handle range like "1-5"
+                start, end = map(int, part.split('-'))
+                selections.update(range(start, end + 1))
+            else:
+                # Handle single number
+                selections.add(int(part))
+    except ValueError:
+        raise ValueError("Invalid selection format")
+
+    # Filter valid range and sort
+    valid_selections = sorted([s for s in selections if 1 <= s <= max_count])
+
+    if not valid_selections:
+        raise ValueError("No valid selections in range")
+
+    return valid_selections
+
+
+def navigate_and_select_documents() -> Optional[list[Path]]:
+    """Navigate folders and select multiple documents.
+
+    Returns:
+        List of selected document Paths, or None if user exits.
+    """
+    current_folder = config.documents_dir
+
+    while True:
+        # Get folders and documents in current location
+        subfolders = config.get_subfolders(current_folder)
+        documents = config.get_available_documents(current_folder)
+
+        # Display current location
+        try:
+            relative_path = current_folder.relative_to(config.documents_dir)
+            location = f"documents/{relative_path}" if str(relative_path) != "." else "documents"
+        except ValueError:
+            location = "documents"
+
+        print(f"\n📂 Current: {location}/\n")
+
+        # Display folders first (with 'd' prefix)
+        if subfolders:
+            for idx, folder in enumerate(subfolders, 1):
+                print(f"  d{idx}. 📁 {folder.name}/")
+            print()
+
+        # Display documents
+        if documents:
+            for idx, doc in enumerate(documents, 1):
+                size_mb = doc.stat().st_size / (1024 * 1024)
+                print(f"   {idx}. 📄 {doc.name} ({size_mb:.2f} MB)")
+        else:
+            print("   (No documents in this folder)")
+
+        # Display navigation options
+        print()
+        at_root = current_folder.resolve() == config.documents_dir.resolve()
+        if not at_root:
+            print("  .. (go up)  |  0 (exit)")
+        else:
+            print("  0 (exit)")
+
+        # Get user input
+        print()
+        if subfolders and documents:
+            prompt = "Select folder (d1,d2...) or documents (1-3, 1,3, all): "
+        elif subfolders:
+            prompt = "Select folder (d1,d2...) or 0 to exit: "
+        elif documents:
+            prompt = "Select documents (1-3, 1,3, all) or 0 to exit: "
+        else:
+            prompt = "Enter '..' to go up or 0 to exit: "
+
+        try:
+            choice = input(prompt).strip()
+
+            # Handle exit
+            if choice == "0":
+                return None
+
+            # Handle go up
+            if choice == "..":
+                if not at_root:
+                    current_folder = current_folder.parent
+                else:
+                    print("   ⚠️  Already at root. Cannot go higher.")
+                continue
+
+            # Handle folder navigation (d1, d2, etc.)
+            if choice.lower().startswith('d') and len(choice) > 1:
+                try:
+                    folder_idx = int(choice[1:]) - 1
+                    if 0 <= folder_idx < len(subfolders):
+                        current_folder = subfolders[folder_idx]
+                        continue
+                    else:
+                        print("   ⚠️  Invalid folder number. Try again.")
+                        continue
+                except ValueError:
+                    print("   ⚠️  Invalid folder selection. Try again.")
+                    continue
+
+            # Handle document selection
+            if not documents:
+                print("   ⚠️  No documents to select. Navigate to a folder with documents.")
+                continue
+
+            # Parse document selection
+            try:
+                indices = parse_selection(choice, len(documents))
+                if not indices:
+                    # Empty selection, go back
+                    continue
+
+                selected_docs = [documents[i - 1] for i in indices]
+
+                # Validate batch size
+                if len(selected_docs) > 20:
+                    total_size_mb = sum(d.stat().st_size for d in selected_docs) / (1024 * 1024)
+                    print(f"\n⚠️  Large batch warning:")
+                    print(f"   Selected: {len(selected_docs)} files ({total_size_mb:.1f} MB)")
+                    print(f"   Estimated time: ~{len(selected_docs) * 2}-{len(selected_docs) * 5} minutes")
+                    confirm = input("\nContinue with this batch? (y/n): ").strip().lower()
+                    if confirm != 'y':
+                        continue
+
+                return selected_docs
+
+            except ValueError as e:
+                print(f"   ⚠️  {e}. Try again.")
+                continue
+
+        except KeyboardInterrupt:
+            print("\n\nExiting...")
+            return None
+
+
+@dataclass
+class BatchStatistics:
+    """Statistics for a document in batch processing."""
+    file_name: str
+    relative_path: str
+    processing_time: float
+    pipeline_name: str
+    pages: int
+    text_blocks: int
+    pictures: int
+    tables: int
+    formulas: int
+    status: str
+
+    @classmethod
+    def from_result(cls, doc_path: Path, result: dict, pipeline_name: str, elapsed: float):
+        """Create BatchStatistics from DocumentProcessor result."""
+        stats = result.get('stats', {})
+        return cls(
+            file_name=doc_path.name,
+            relative_path=str(doc_path.relative_to(config.documents_dir)),
+            processing_time=elapsed,
+            pipeline_name=pipeline_name,
+            pages=stats.get('pages', 0),
+            text_blocks=stats.get('text_blocks', 0),
+            pictures=stats.get('figures', 0),
+            tables=stats.get('tables', 0),
+            formulas=stats.get('formulas', 0),
+            status="Success"
+        )
+
+    @classmethod
+    def from_error(cls, doc_path: Path, pipeline_name: str, error: str):
+        """Create BatchStatistics for failed document."""
+        return cls(
+            file_name=doc_path.name,
+            relative_path=str(doc_path.relative_to(config.documents_dir)),
+            processing_time=0.0,
+            pipeline_name=pipeline_name,
+            pages=0, text_blocks=0, pictures=0, tables=0, formulas=0,
+            status=f"Failed: {error}"
+        )
+
+
+def confirm_batch_processing(documents: list[Path], pipeline_name: str) -> bool:
+    """Display batch summary and confirm with user."""
+    # Group documents by folder
+    folders = defaultdict(list)
+    for doc in documents:
+        folder = doc.relative_to(config.documents_dir).parent
+        folders[folder].append(doc)
+
+    # Calculate totals
+    total_size = sum(doc.stat().st_size for doc in documents)
+    total_size_mb = total_size / (1024 * 1024)
+
+    # Display summary
+    print(f"\n{'='*60}")
+    print("📋 BATCH PROCESSING CONFIRMATION")
+    print(f"{'='*60}")
+    print(f"Documents: {len(documents)} files from {len(folders)} folder(s)")
+    print(f"Pipeline: {pipeline_name}")
+    print()
+
+    # Show grouped by folder
+    for folder, docs in sorted(folders.items()):
+        folder_size = sum(d.stat().st_size for d in docs)
+        folder_size_mb = folder_size / (1024 * 1024)
+        folder_str = str(folder) if str(folder) != "." else "(root)"
+        print(f"{folder_str}/ ({len(docs)} files, {folder_size_mb:.1f} MB)")
+        for doc in docs:
+            size_mb = doc.stat().st_size / (1024 * 1024)
+            print(f"  - {doc.name} ({size_mb:.1f} MB)")
+        print()
+
+    print(f"Total size: {total_size_mb:.1f} MB")
+    print(f"Estimated time: ~{len(documents) * 2}-{len(documents) * 5} minutes")
+    print(f"{'='*60}\n")
+
+    # Check for warnings from validation
+    warnings = config.validate_batch_preconditions(documents)
+    if warnings:
+        print("⚠️  Warnings:")
+        for warning in warnings:
+            print(f"   - {warning}")
+        print()
+
+    # Confirm
+    choice = input("Continue with batch processing? (y/n): ").strip().lower()
+    return choice == 'y'
+
+
+def process_batch(documents: list[Path], pipeline_key: str) -> list[BatchStatistics]:
+    """Process multiple documents with same pipeline."""
+    results = []
+    pipeline_config = config.get_pipeline_config(pipeline_key)
+    total = len(documents)
+
+    print(f"\n{'='*60}")
+    print(f"Starting batch: {total} documents with {pipeline_config.name}")
+    print(f"{'='*60}\n")
+
+    for i, doc in enumerate(documents, 1):
+        # Progress indicator
+        print(f"\n[{i}/{total}] Processing: {doc.name}")
+        print(f"{'─'*60}")
+
+        try:
+            # Calculate folder-specific output directories
+            output_dir = config.get_relative_output_dir(doc)
+            assets_dir = config.get_relative_assets_dir(doc)
+
+            # Create processor with folder-aware directories
+            processor = DocumentProcessor(
+                pipeline_key=pipeline_key,
+                output_base_dir=output_dir,
+                assets_base_dir=assets_dir
+            )
+
+            # Process with timing
+            start_time = time.time()
+            result = processor.process_document(doc)
+            elapsed = time.time() - start_time
+
+            # Create success statistics
+            batch_stat = BatchStatistics.from_result(
+                doc, result, pipeline_config.name, elapsed
+            )
+            results.append(batch_stat)
+
+            print(f"✓ Completed in {elapsed:.1f}s")
+
+        except KeyboardInterrupt:
+            print("\n\n⚠️  Batch interrupted!")
+            print(f"Processed {len(results)}/{total} files")
+            choice = input("Save partial results? (y/n): ").strip().lower()
+            if choice == 'y':
+                display_batch_summary(results)
+            raise
+
+        except Exception as e:
+            # Handle errors gracefully, continue with next document
+            error_msg = str(e)[:100]  # Truncate long errors
+            batch_stat = BatchStatistics.from_error(doc, pipeline_config.name, error_msg)
+            results.append(batch_stat)
+            print(f"✗ Failed: {error_msg}")
+
+    return results
+
+
+def display_batch_summary(results: list[BatchStatistics]):
+    """Display formatted table summary of batch processing results."""
+    try:
+        from tabulate import tabulate
+    except ImportError:
+        print("\n⚠️  'tabulate' library not installed. Showing basic summary instead.")
+        print(f"\nProcessed {len(results)} files:")
+        for r in results:
+            status = "✓" if "Success" in r.status else "✗"
+            print(f"  {status} {r.relative_path} - {r.processing_time:.1f}s")
+        return
+
+    # Prepare table data
+    table_data = []
+    for stat in results:
+        # Format time: "12.3s" or "2m 15s"
+        if stat.processing_time >= 60:
+            mins = int(stat.processing_time // 60)
+            secs = int(stat.processing_time % 60)
+            time_str = f"{mins}m {secs}s"
+        else:
+            time_str = f"{stat.processing_time:.1f}s"
+
+        # Status indicator
+        status = "✓" if "Success" in stat.status else "✗"
+
+        table_data.append([
+            stat.relative_path,
+            time_str,
+            stat.pipeline_name[:10],  # Truncate long names
+            stat.pages,
+            stat.text_blocks,
+            stat.pictures,
+            stat.tables,
+            stat.formulas,
+            status
+        ])
+
+    # Calculate totals
+    total_time = sum(s.processing_time for s in results)
+    success_count = sum(1 for s in results if "Success" in s.status)
+    failed_count = len(results) - success_count
+
+    # Format total time
+    if total_time >= 60:
+        mins = int(total_time // 60)
+        secs = int(total_time % 60)
+        total_time_str = f"{mins}m {secs}s"
+    else:
+        total_time_str = f"{total_time:.1f}s"
+
+    # Add summary row
+    table_data.append([
+        f"TOTAL: {len(results)} files ({success_count} ✓, {failed_count} ✗)",
+        total_time_str,
+        "",
+        sum(s.pages for s in results),
+        sum(s.text_blocks for s in results),
+        sum(s.pictures for s in results),
+        sum(s.tables for s in results),
+        sum(s.formulas for s in results),
+        ""
+    ])
+
+    # Display table
+    headers = ["File", "Time", "Pipeline", "Pages", "Text", "Pics", "Tables", "Formulas", "Status"]
+    print("\n" + "="*80)
+    print("BATCH PROCESSING SUMMARY")
+    print("="*80)
+    print(tabulate(table_data, headers=headers, tablefmt="simple_grid"))
+    print()
+
+
 def display_banner():
     """Display application banner."""
     print("\n" + "=" * 60)
@@ -576,47 +973,73 @@ def select_pipeline() -> Optional[str]:
 
 
 def main():
-    """Main application loop."""
+    """Main application loop with batch processing support."""
     display_banner()
 
     while True:
-        # Select document
-        doc_path = select_document()
-        if not doc_path:
+        # Navigate folders and select documents (supports batch selection)
+        selected_docs = navigate_and_select_documents()
+        if not selected_docs:
             print("\nGoodbye! 👋")
             sys.exit(0)
 
-        # Select pipeline
+        # Select pipeline (once for entire batch)
         pipeline_key = select_pipeline()
         if not pipeline_key:
             continue  # Go back to document selection
 
-        # Process document
-        try:
-            processor = DocumentProcessor(pipeline_key)
-            result = processor.process_document(doc_path)
+        pipeline_config = config.get_pipeline_config(pipeline_key)
 
-            print("\n" + "=" * 60)
-            print("  PROCESSING SUMMARY")
-            print("=" * 60)
-            print(f"Document: {doc_path.name}")
-            print(f"Pipeline: {processor.pipeline_config.name}")
-            print(f"Time: {result['elapsed']:.2f}s")
-            print(f"\nStatistics:")
-            for key, value in result['stats'].items():
-                print(f"  - {key.capitalize()}: {value}")
-            print("\n✓ Outputs saved to: out/")
-            print("=" * 60)
+        # Handle single document vs batch processing
+        if len(selected_docs) == 1:
+            # Single document mode (backward compatible)
+            doc_path = selected_docs[0]
+            try:
+                processor = DocumentProcessor(pipeline_key)
+                result = processor.process_document(doc_path)
 
-        except Exception as e:
-            print(f"\n✗ Processing failed: {e}")
-            if config.debug_mode:
-                import traceback
-                traceback.print_exc()
+                print("\n" + "=" * 60)
+                print("  PROCESSING SUMMARY")
+                print("=" * 60)
+                print(f"Document: {doc_path.name}")
+                print(f"Pipeline: {processor.pipeline_config.name}")
+                print(f"Time: {result['elapsed']:.2f}s")
+                print(f"\nStatistics:")
+                for key, value in result['stats'].items():
+                    print(f"  - {key.capitalize()}: {value}")
+                print("\n✓ Outputs saved to: out/")
+                print("=" * 60)
 
-        # Ask if user wants to process another document
+            except Exception as e:
+                print(f"\n✗ Processing failed: {e}")
+                if config.debug_mode:
+                    import traceback
+                    traceback.print_exc()
+
+        else:
+            # Batch processing mode
+            # Confirm batch before processing
+            if not confirm_batch_processing(selected_docs, pipeline_config.name):
+                print("Batch cancelled. Returning to document selection...")
+                continue
+
+            # Process batch
+            try:
+                results = process_batch(selected_docs, pipeline_key)
+                display_batch_summary(results)
+
+            except KeyboardInterrupt:
+                print("\n\nBatch processing interrupted.")
+                # Summary already displayed in process_batch if user chose to save
+            except Exception as e:
+                print(f"\n✗ Batch processing failed: {e}")
+                if config.debug_mode:
+                    import traceback
+                    traceback.print_exc()
+
+        # Ask if user wants to process another batch
         print("\n")
-        choice = input("Process another document? (y/n): ").strip().lower()
+        choice = input("Process another batch? (y/n): ").strip().lower()
         if choice != 'y':
             print("\nGoodbye! 👋")
             break
