@@ -381,6 +381,10 @@ class DocumentProcessor:
             if 'pictures' in doc_dict:
                 stats["figures"] = len(doc_dict['pictures'])
 
+            # Count formulas by checking label in texts array
+            if 'texts' in doc_dict:
+                stats["formulas"] = sum(1 for text in doc_dict['texts'] if text.get('label') == 'formula')
+
             # If we still have zero text blocks, try the old method as fallback
             if stats["text_blocks"] == 0:
                 for item, _ in doc.iterate_items():
@@ -408,8 +412,14 @@ class DocumentProcessor:
         """Save document outputs in various formats."""
         base_name = doc_path.stem
 
+        # Create pipeline-specific filename with ONLY the number
+        # e.g., "7-FormulaAware" → "p7"
+        pipeline_name = self.pipeline_config.name
+        pipeline_num = pipeline_name.split('-')[0]  # Extract number
+        pipeline_suffix = f"p{pipeline_num}"
+
         # Save JSON (DoclingDocument serialization)
-        json_path = self.output_base_dir / f"{base_name}_docling.json"
+        json_path = self.output_base_dir / f"{base_name}_{pipeline_suffix}_docling.json"
         print(f"\n💾 Saving outputs...")
         print(f"   → JSON: {json_path.name}")
 
@@ -422,13 +432,76 @@ class DocumentProcessor:
             print(f"   ⚠️  Error saving JSON: {e}")
 
         # Save Markdown preview
-        md_path = self.output_base_dir / f"{base_name}_preview.md"
+        md_path = self.output_base_dir / f"{base_name}_{pipeline_suffix}_preview.md"
         print(f"   → Markdown: {md_path.name}")
 
         try:
             self._generate_markdown_preview(doc, md_path, doc_path.name, stats, image_captions)
         except Exception as e:
             print(f"   ⚠️  Error saving Markdown: {e}")
+
+    def _enhance_formulas_in_markdown(self, markdown_content: str, doc) -> str:
+        """Replace formula placeholders with actual formula content from the document.
+
+        Args:
+            markdown_content: The markdown string with <!-- formula-not-decoded --> placeholders
+            doc: The DoclingDocument object
+
+        Returns:
+            Enhanced markdown with actual formula text in LaTeX format
+        """
+        try:
+            doc_dict = doc.export_to_dict()
+
+            # Extract all formulas with non-empty text content
+            # Filter out empty formulas as they represent LaTeX symbols that weren't decoded
+            formulas = []
+            if 'texts' in doc_dict:
+                for text in doc_dict['texts']:
+                    if text.get('label') == 'formula':
+                        formula_text = text.get('text', '').strip()
+                        if formula_text:  # Only include non-empty formulas
+                            formulas.append(formula_text)
+
+            if not formulas:
+                return markdown_content
+
+            # Replace placeholders with actual formula text
+            formula_idx = 0
+            lines = markdown_content.split('\n')
+            enhanced_lines = []
+
+            for line in lines:
+                if '<!-- formula-not-decoded -->' in line:
+                    if formula_idx < len(formulas):
+                        formula_text = formulas[formula_idx]
+
+                        # Format as LaTeX (inline for short, block for long)
+                        if len(formula_text) < 50:
+                            # Inline LaTeX: $formula$
+                            enhanced_lines.append(f'$${formula_text}$$')
+                        else:
+                            # Block LaTeX: $$\nformula\n$$
+                            enhanced_lines.append(f'$$\n{formula_text}\n$$')
+
+                        formula_idx += 1
+                    else:
+                        # More placeholders than formulas - keep placeholder
+                        enhanced_lines.append('*(formula not available)*')
+                else:
+                    enhanced_lines.append(line)
+
+            # Report if mismatch
+            placeholder_count = markdown_content.count('<!-- formula-not-decoded -->')
+            if config.debug_mode and formula_idx != placeholder_count:
+                print(f"   ℹ️  Formula mismatch: {len(formulas)} available, {placeholder_count} placeholders")
+
+            return '\n'.join(enhanced_lines)
+
+        except Exception as e:
+            if config.debug_mode:
+                print(f"   ⚠️  Error enhancing formulas: {e}")
+            return markdown_content
 
     def _generate_markdown_preview(self, doc, output_path: Path, doc_name: str, stats: Dict[str, int], image_captions: Optional[Dict] = None):
         """Generate a comprehensive Markdown preview of the document."""
@@ -475,6 +548,9 @@ class DocumentProcessor:
                 has_content = len(markdown_content.strip()) > 20 and not markdown_content.strip().startswith('<!--')
 
                 if has_content:
+                    # Replace formula placeholders with actual formula content
+                    if stats['formulas'] > 0:
+                        markdown_content = self._enhance_formulas_in_markdown(markdown_content, doc)
                     f.write(markdown_content)
                 else:
                     # Markdown export was empty or minimal, use manual extraction

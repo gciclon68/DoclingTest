@@ -31,10 +31,10 @@ class PipelineConfig:
     model_size_mb: Optional[int] = None
 
 
-# Define all available pipelines
+# Define all available pipelines with numbers for better organization
 PIPELINES = {
     "simple": PipelineConfig(
-        name="Simple PDF",
+        name="1-Simple PDF",
         key="SIMPLE_PDF",
         description="Fast PDF processing, no ML models, no OCR, basic text extraction",
         requires_api_key=False,
@@ -44,7 +44,7 @@ PIPELINES = {
         model_size_mb=0
     ),
     "standard": PipelineConfig(
-        name="Standard PDF",
+        name="2-Standard PDF",
         key="STANDARD_PDF",
         description="Full-featured with layout analysis and table detection (downloads ML models)",
         requires_api_key=False,
@@ -54,7 +54,7 @@ PIPELINES = {
         model_size_mb=500
     ),
     "rapidocr": PipelineConfig(
-        name="RapidOCR Pipeline",
+        name="3-RapidOCR",
         key="RAPIDOCR_PIPELINE",
         description="OCR-enabled with RapidOCR (fast, local, good for scanned docs)",
         requires_api_key=False,
@@ -64,7 +64,7 @@ PIPELINES = {
         model_size_mb=50
     ),
     "easyocr": PipelineConfig(
-        name="EasyOCR Pipeline",
+        name="4-EasyOCR",
         key="EASYOCR_PIPELINE",
         description="OCR with EasyOCR (slower but better accuracy, 80+ languages)",
         requires_api_key=False,
@@ -74,7 +74,7 @@ PIPELINES = {
         model_size_mb=200
     ),
     "tesseract": PipelineConfig(
-        name="Tesseract Pipeline",
+        name="5-Tesseract",
         key="TESSERACT_PIPELINE",
         description="OCR with Tesseract (traditional, requires system install - may not work)",
         requires_api_key=False,
@@ -84,7 +84,7 @@ PIPELINES = {
         model_size_mb=0
     ),
     "vision_llm": PipelineConfig(
-        name="Vision LLM Pipeline",
+        name="6-VisionLLM",
         key="VISION_LLM_PIPELINE",
         description="Advanced OCR + AI image descriptions (requires API key, costs apply)",
         requires_api_key=True,
@@ -94,7 +94,7 @@ PIPELINES = {
         model_size_mb=500
     ),
     "formula_aware": PipelineConfig(
-        name="Formula-Aware Pipeline",
+        name="7-FormulaAware",
         key="FORMULA_AWARE_PIPELINE",
         description="Specialized for math documents, preserves LaTeX formulas and symbols",
         requires_api_key=False,
