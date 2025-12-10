@@ -130,5 +130,10 @@
 - Pipeline organization
 - Documentation restructure
 
+### Commit Details
+**Batch ID:** feb254a
+**Files Changed:** 10 files, 2454 insertions, 76 deletions
+**Commit Message:** Add multimodal RAG system design and formula detection improvements
+
 ### Previous Sessions
-See GIT.md for commit history and batch details.
+See [GIT.md](GIT.md) for complete commit history.
